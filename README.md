@@ -1,5 +1,7 @@
 ### yPort
-yPort are Telegram and Discord bots that help users track deposits in Yearn Vaults.
+Discord and Telegram bots that help Yearn users monitor their Yearn Vault deposits across multiple addresses by generating detailed portfolio reports including yield forecasting, APR tracking, and personalized vault suggestions based on users' current Vault deposits. It provides users with consolidated information about how their Vaults are performing and suggests Vaults with higher APRs when applicable.
+
+The bots do not require users to connect their wallets or interact with the blockchain. It simply reports on existing Vaults and provides information based on publicly available Vault data.
 
 ### Telegram
 Start by sending /start, then submit your addresses or ENS names when prompted. The bot will process your addresses and send an immediate report. You’ll also receive daily reports at 00:00 UTC. You can request a report anytime using /yport. Seven-day and thirty-day yield estimates are included in the reports. Along with the report, the bot also sends vault suggestions with higher APRs of at least 3%, if available, based on the underlying assets of your current Vault deposits.
