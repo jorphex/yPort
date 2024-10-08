@@ -137,13 +137,12 @@ async def start(update: Update, context: CallbackContext):
     user_states[user_id] = 'awaiting_eoas'
     user_data[user_id] = {'eoas': []}
     await update.message.reply_text("👋 Welcome! Please send addresses or ENS names separated by spaces.")
-
 async def handle_message(update: Update, context: CallbackContext):
     user_id = str(update.effective_chat.id)
     text = update.message.text.strip()
 
     if user_id not in user_states:
-        await update.message.reply_text("⚠️ Please start by sending /yport")
+        await update.message.reply_text("⚠️ Please start by sending /start")
         return
 
     state = user_states[user_id]
@@ -175,7 +174,7 @@ async def handle_message(update: Update, context: CallbackContext):
         user_data[user_id]['eoas'] = checksummed_eoas
         user_states[user_id] = 'tracking'
         await update.message.reply_text("✅ Addresses saved.")
-        await yport(update, context)  # Trigger the report immediately after saving
+        await yport(update, context)
     else:
         await update.message.reply_text("⚙️ I'm currently tracking your data. To reset, send /start again.")
 
@@ -268,7 +267,7 @@ async def generate_report(user_id):
                 f"📊 APR: {apr:.2f}%\n"
                 f"📈 Est. Yield: {yield_7d:.2f}% (7d / ${usd_change_7d:,.2f}), {yield_30d:.2f}% (30d / ${usd_change_30d:,.2f})\n"
             )
-            
+
             report_vaults_data.append({
                 'address': vault_data['address'].lower(),
                 'underlying_token_address': underlying_token_address,
@@ -394,10 +393,13 @@ def truncate_html_message(message, max_length=4096):
     return truncated_message + "\n... Truncated due to length."
 
 async def daily_send_reports(context: CallbackContext):
+    if not user_data:
+        return
+
     for user_id in user_data.keys():
         try:
-            report = await generate_report(user_id)
-            vault_suggestions = await generate_vault_suggestions(user_id)
+            report, report_vaults_data = await generate_report(user_id)
+            vault_suggestions = await generate_vault_suggestions(user_id, report_vaults_data)
             await context.bot.send_message(chat_id=user_id, text=report, parse_mode='HTML', disable_web_page_preview=True)
             if vault_suggestions:
                 await context.bot.send_message(chat_id=user_id, text=vault_suggestions, parse_mode='HTML', disable_web_page_preview=True)
@@ -414,6 +416,10 @@ async def daily_usage_report(context: CallbackContext):
 async def yport(update: Update, context: CallbackContext):
     global daily_usage_count
     user_id = str(update.effective_chat.id)
+
+    if user_id not in user_data or not user_data[user_id].get('eoas'):
+        await update.message.reply_text("⚠️ Please start by sending /start.")
+        return
 
     if report_locks.get(user_id, False):
         await update.message.reply_text("⚠️ A report is already being generated. Please wait.", disable_web_page_preview=True)
