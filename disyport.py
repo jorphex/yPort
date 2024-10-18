@@ -521,14 +521,14 @@ async def fetch_yearn_tvl():
         print(f"Exception occurred while fetching Yearn TVL: {str(e)}")
         return 0
 
-@tasks.loop(hours=12)
+@tasks.loop(hours=3)
 async def daily_top_vaults_report():
     global last_report_message_id
 
     while True:
         now = datetime.utcnow()
 
-        next_run_hour = (now.hour // 12 + 1) * 12 % 24
+        next_run_hour = (now.hour // 3 + 1) * 3 % 24
         next_run = now.replace(hour=next_run_hour, minute=0, second=0, microsecond=0)
 
         if next_run < now:
@@ -553,42 +553,17 @@ async def daily_top_vaults_report():
                 and vault.get('kind') != 'Legacy' 
                 and not vault.get('info', {}).get('isRetired') 
                 and vault.get('token', {}).get('address', '').lower() in {
-                    SINGLE_ASSET_TOKENS['ethereum']['weth'].lower(),
-                    SINGLE_ASSET_TOKENS['ethereum']['dai'].lower(),
-                    SINGLE_ASSET_TOKENS['ethereum']['usdc'].lower(),
-                    SINGLE_ASSET_TOKENS['ethereum']['usdt'].lower(),
-                    SINGLE_ASSET_TOKENS['ethereum']['wbtc'].lower(),
-                    SINGLE_ASSET_TOKENS['arbitrum']['weth'].lower(),
-                    SINGLE_ASSET_TOKENS['arbitrum']['dai'].lower(),
-                    SINGLE_ASSET_TOKENS['arbitrum']['usdc'].lower(),
-                    SINGLE_ASSET_TOKENS['arbitrum']['usdc_e'].lower(),
-                    SINGLE_ASSET_TOKENS['arbitrum']['usdt'].lower(),
-                    SINGLE_ASSET_TOKENS['arbitrum']['wbtc'].lower(),
-                    SINGLE_ASSET_TOKENS['polygon']['weth'].lower(),
-                    SINGLE_ASSET_TOKENS['polygon']['dai'].lower(),
-                    SINGLE_ASSET_TOKENS['polygon']['usdc'].lower(),
-                    SINGLE_ASSET_TOKENS['polygon']['usdc_e'].lower(),
-                    SINGLE_ASSET_TOKENS['polygon']['usdt'].lower(),
-                    SINGLE_ASSET_TOKENS['polygon']['wbtc'].lower(),
-                    SINGLE_ASSET_TOKENS['base']['weth'].lower(),
-                    SINGLE_ASSET_TOKENS['base']['dai'].lower(),
-                    SINGLE_ASSET_TOKENS['base']['usdc'].lower(),
-                    SINGLE_ASSET_TOKENS['optimism']['weth'].lower(),
-                    SINGLE_ASSET_TOKENS['optimism']['dai'].lower(),
-                    SINGLE_ASSET_TOKENS['optimism']['usdc'].lower(),
-                    SINGLE_ASSET_TOKENS['optimism']['usdc_e'].lower(),
-                    SINGLE_ASSET_TOKENS['optimism']['usdt'].lower(),
-                    SINGLE_ASSET_TOKENS['optimism']['wbtc'].lower(),
+                    addr.lower() for tokens in SINGLE_ASSET_TOKENS.values() for addr in tokens.values()
                 }
                 and vault.get('tvl', {}).get('tvl', 0) >= 100
             ]
 
             filtered_vaults.sort(
                 key=lambda v: (
-                    v['apr'].get('forwardAPR', {}).get('netAPR', 0),
-                    v['apr'].get('netAPR', 0),
-                    v['apr'].get('points', {}).get('weekAgo', 0),
-                    v['apr'].get('points', {}).get('monthAgo', 0)
+                    v['apr'].get('forwardAPR', {}).get('netAPR') or 0,
+                    v['apr'].get('netAPR') or 0,
+                    v['apr'].get('points', {}).get('weekAgo') or 0,
+                    v['apr'].get('points', {}).get('monthAgo') or 0
                 ),
                 reverse=True
             )
@@ -615,12 +590,14 @@ async def daily_top_vaults_report():
                 chain_id = vault.get('chainID', 'Unknown')
                 chain = CHAIN_ID_TO_NAME.get(chain_id, 'Unknown')
                 vault_address = vault.get('address', 'Unknown')
-                apr = (
-                    vault['apr'].get('forwardAPR', {}).get('netAPR', 0) or
-                    vault['apr'].get('netAPR', 0) or
-                    vault['apr'].get('points', {}).get('weekAgo', 0) or
-                    vault['apr'].get('points', {}).get('monthAgo', 0)
-                ) * 100
+                apr_value = (
+                    vault['apr'].get('forwardAPR', {}).get('netAPR') or
+                    vault['apr'].get('netAPR') or
+                    vault['apr'].get('points', {}).get('weekAgo') or
+                    vault['apr'].get('points', {}).get('monthAgo') or
+                    0
+                )
+                apr = apr_value * 100
                 tvl = format_tvl(vault.get('tvl', {}).get('tvl', 0))
 
                 vault_url = f"https://yearn.fi/v3/{chain_id}/{vault_address}"
