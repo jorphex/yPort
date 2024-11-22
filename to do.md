@@ -10,4 +10,4 @@ yport
 - use balanceOf and kong to calculate yield earned over the past 7 days
 - add note if staking available
 - add note if isRetired
-- handle user blocked daily report messages (pause)
+- handle user blocked daily report messages (add pause command)
