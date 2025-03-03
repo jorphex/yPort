@@ -11,3 +11,10 @@ yport
 - add note if staking available
 - add note if isRetired
 - handle user blocked daily report messages (add pause command)
+- pull and cache kong and ydaemon every 3, 6, or 12 hours
+- recheck async
+- organize report message by chain
+- organize suggestions by apr and chain
+- check asset and vault prices viability for 1d historical data
+- add isyearn check to daily report
+- 
