@@ -10,7 +10,7 @@ yport
 - use balanceOf and kong to calculate yield earned over the past 7 days
 - add note if staking available
 - add note if isRetired
-- handle user blocked daily report messages (add pause command)
+- handle user blocked daily report messages (add /stop command)
 - pre-fetch and cache kong and ydaemon every 12 hours
 - recheck async
 - organize report message by chain
@@ -18,3 +18,4 @@ yport
 - check asset and vault prices viability for 1d historical data
 - add isyearn check to daily report
 - rework onboarding to have daily reports disabled by default
+- add /help command
