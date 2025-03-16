@@ -17,4 +17,5 @@ yport
 - organize suggestions by apr and chain
 - check asset and vault prices viability for 1d historical data
 - add isyearn check to daily report
-- 
+- add /stop command to stop daily reports
+- rework onboarding to have daily reports disabled by default
