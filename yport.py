@@ -356,6 +356,61 @@ def get_1up_gauge_map():
         logger.warning("1UP gauge map cache miss or expired.")
         return cache_entry.get('data') 
 
+def load_cache_from_files():
+    """Loads cache data from JSON files on startup (Optional)."""
+    global api_cache
+
+    if CACHE_FILE_YDAEMON.exists():
+        try:
+            with open(CACHE_FILE_YDAEMON, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict) and 'data' in data and 'timestamp' in data:
+                    api_cache['ydaemon'] = data
+                    logger.info(f"Loaded yDaemon cache from file. Timestamp: {datetime.fromtimestamp(data['timestamp'])}")
+        except Exception as e:
+            logger.error(f"Failed to load yDaemon cache from file: {e}")
+
+    if CACHE_FILE_KONG.exists():
+        try:
+            with open(CACHE_FILE_KONG, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict) and 'data' in data and 'timestamp' in data:
+
+                    deserialized_kong_data = {}
+                    for k, v in data['data'].items():
+                        try:
+                            chain_id_str, address = k.split('_', 1)
+                            deserialized_kong_data[(int(chain_id_str), address.lower())] = v
+                        except ValueError:
+                            logger.warning(f"Skipping invalid key in Kong cache file: {k}")
+                    api_cache['kong']['data'] = deserialized_kong_data
+                    api_cache['kong']['timestamp'] = data['timestamp']
+                    logger.info(f"Loaded Kong cache from file. Timestamp: {datetime.fromtimestamp(data['timestamp'])}")
+        except Exception as e:
+            logger.error(f"Failed to load Kong cache from file: {e}")
+
+    cache_file_1up = CACHE_FILE_1UP 
+    if cache_file_1up.exists():
+        try:
+            with open(cache_file_1up, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict) and 'gauges' in data and 'timestamp' in data: 
+                    api_cache['1up'] = data
+                    logger.info(f"Loaded 1UP APR cache from file. Timestamp: {datetime.fromtimestamp(data['timestamp'])}")
+        except Exception as e:
+            logger.error(f"Failed to load 1UP APR cache from file: {e}")
+
+    cache_file_1up_map = Path("cache_1up_map.json") 
+    if cache_file_1up_map.exists():
+        try:
+            with open(cache_file_1up_map, 'r') as f:
+                data = json.load(f)
+
+                if isinstance(data, dict) and 'data' in data and 'timestamp' in data:
+                    api_cache['1up_gauge_map'] = data
+                    logger.info(f"Loaded 1UP Gauge Map cache from file. Timestamp: {datetime.fromtimestamp(data['timestamp'])}")
+        except Exception as e:
+            logger.error(f"Failed to load 1UP Gauge Map cache from file: {e}")
 
 
 async def fetch_detailed_vault_data(chain_id, vault_address):
@@ -1398,18 +1453,38 @@ async def daily_send_report_for_user(context: CallbackContext):
         report_content, suggestions_content, staking_opportunities_list = await generate_report_content(user_id)
         staking_opportunities_content = await generate_staking_opportunities_content(staking_opportunities_list)
 
-        await context.bot.send_message(chat_id=user_id, text="--- Your Daily Yearn Report ---", parse_mode='HTML', disable_web_page_preview=True)
+        keyboard = get_main_keyboard()
+        last_message_markup = None 
 
         truncated_report = truncate_html_message(report_content)
-        await context.bot.send_message(chat_id=user_id, text=truncated_report, parse_mode='HTML', disable_web_page_preview=True)
+
+        if not suggestions_content and not staking_opportunities_content:
+            last_message_markup = keyboard
+        await context.bot.send_message(
+            chat_id=user_id, text=truncated_report, parse_mode='HTML',
+            disable_web_page_preview=True, reply_markup=last_message_markup
+        )
 
         if suggestions_content:
             truncated_suggestions = truncate_html_message(suggestions_content)
-            await context.bot.send_message(chat_id=user_id, text=truncated_suggestions, parse_mode='HTML', disable_web_page_preview=True)
+
+            if not staking_opportunities_content:
+                last_message_markup = keyboard
+            else:
+                last_message_markup = None 
+            await context.bot.send_message(
+                chat_id=user_id, text=truncated_suggestions, parse_mode='HTML',
+                disable_web_page_preview=True, reply_markup=last_message_markup
+            )
 
         if staking_opportunities_content:
-             truncated_staking_opps = truncate_html_message(staking_opportunities_content)
-             await context.bot.send_message(chat_id=user_id, text=truncated_staking_opps, parse_mode='HTML', disable_web_page_preview=True)
+            truncated_staking_opps = truncate_html_message(staking_opportunities_content)
+
+            last_message_markup = keyboard
+            await context.bot.send_message(
+                chat_id=user_id, text=truncated_staking_opps, parse_mode='HTML',
+                disable_web_page_preview=True, reply_markup=last_message_markup
+            )
 
         automated_daily_report_count += 1
         logger.info(f"Automated daily report count incremented to: {automated_daily_report_count}")
