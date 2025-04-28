@@ -18,3 +18,5 @@ yport
 - check asset and vault prices viability for 1d historical data
 - add isyearn check to daily report
 - ~~rework onboarding to have daily reports disabled by default~~✅
+- fix staked deposit display, add note or replace vault apy with "including vault apy"
+- fix staked deposit link, change to staking page link
