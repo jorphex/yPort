@@ -108,15 +108,15 @@ def _format_vault_lines(entry: VaultEntry) -> List[str]:
             staked_indicator = " *(Staked: 1UP)*"
 
     lines = [f"**[{name} ({token})]({entry.vault_url})**{staked_indicator}"]
-    details = f"• Value: {_format_money(entry.vault_usd_value)} | Vault APY: {entry.vault_apr_percent:.2f}%"
+    details = f"Value: {_format_money(entry.vault_usd_value)}, Vault APY: {entry.vault_apr_percent:.2f}%"
     if entry.staked_status != "none" and entry.current_staking_apr_percent > 0:
         details += (
-            f" | Staking APY: {entry.current_staking_apr_percent:.2f}% "
+            f", Staking APY: {entry.current_staking_apr_percent:.2f}% "
             f"({escape_markdown(entry.current_staking_apr_source)})"
         )
     lines.append(details)
     lines.append(
-        f"• Yield: {entry.yield_7d:.2f}% [7d] ({_format_signed_money(entry.usd_change_7d)}), "
+        f"Yield: {entry.yield_7d:.2f}% [7d] ({_format_signed_money(entry.usd_change_7d)}), "
         f"{entry.yield_30d:.2f}% [30d] ({_format_signed_money(entry.usd_change_30d)})"
     )
     return lines
@@ -127,8 +127,8 @@ def _format_chain_total(chain: ChainReport) -> List[str]:
         return ["*No holdings found on this chain.*"]
     return [
         f"💰 **Chain Total: {_format_money(chain.total_usd)}**",
+        f"📊 Avg Vault APY: {chain.avg_apr:.2f}%",
         (
-            f"📊 Avg Vault APY: {chain.avg_apr:.2f}% | "
             f"📈 Avg Yield: {chain.avg_yield_7d:.2f}% [7d] ({_format_signed_money(chain.total_usd_change_7d)}), "
             f"{chain.avg_yield_30d:.2f}% [30d] ({_format_signed_money(chain.total_usd_change_30d)})"
         ),
@@ -165,7 +165,9 @@ def render_overall_section(report: ReportData) -> List[str]:
     if report.overall.total_usd > 0:
         lines.append(f"💰 Total Value: {_format_money(report.overall.total_usd)}")
         lines.append(
-            f"📊 Avg Vault APY: {report.overall.avg_apr:.2f}% | "
+            f"📊 Avg Vault APY: {report.overall.avg_apr:.2f}%"
+        )
+        lines.append(
             f"📈 Avg Yield: {report.overall.avg_yield_7d:.2f}% [7d] ({_format_signed_money(report.overall.total_usd_change_7d)}), "
             f"{report.overall.avg_yield_30d:.2f}% [30d] ({_format_signed_money(report.overall.total_usd_change_30d)})"
         )
