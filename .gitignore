@@ -1,0 +1,32 @@
+.env
+.env.*
+!.env.example
+
+# SQLite
+yport.db
+*.db
+*.db-shm
+*.db-wal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# OS
+.DS_Store
+
+# Local notes
+MYNOTES.md
+AGENTS.md
