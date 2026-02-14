@@ -11,14 +11,19 @@ from ..config import Config
 from ..report import ReportService
 from ..web3_utils import Web3Manager
 from ..storage import SQLiteStore
-from ..format.telegram import render_report, render_suggestions
+from ..format.telegram import (
+    escape_markdown,
+    render_chain_sections,
+    render_overall_section,
+    render_report,
+    render_suggestions,
+)
 
 logger = logging.getLogger(__name__)
 
 CALLBACK_REPORT = "action:yport"
 CALLBACK_ADDRESSES = "action:addresses"
-CALLBACK_DAILY_ON = "action:daily_on"
-CALLBACK_DAILY_OFF = "action:daily_off"
+CALLBACK_DAILY_TOGGLE = "action:daily_toggle"
 CALLBACK_HELP = "action:help"
 
 TELEGRAM_MAX_LEN = 4096
@@ -35,8 +40,7 @@ class TelegramBot:
         self._application.add_handler(CommandHandler("start", self._start))
         self._application.add_handler(CommandHandler("yport", self._yport_command))
         self._application.add_handler(CommandHandler("addresses", self._addresses_command))
-        self._application.add_handler(CommandHandler("daily_on", self._daily_on_command))
-        self._application.add_handler(CommandHandler("daily_off", self._daily_off_command))
+        self._application.add_handler(CommandHandler("dailytoggle", self._daily_toggle_command))
         self._application.add_handler(CommandHandler("help", self._help_command))
         self._application.add_handler(CallbackQueryHandler(self._button_handler))
         self._application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_message))
@@ -63,69 +67,71 @@ class TelegramBot:
             BotCommand("start", "Start and add addresses"),
             BotCommand("yport", "Generate your report"),
             BotCommand("addresses", "Manage addresses"),
-            BotCommand("daily_on", "Enable daily reports"),
-            BotCommand("daily_off", "Disable daily reports"),
+            BotCommand("dailytoggle", "Toggle daily reports"),
             BotCommand("help", "Help"),
         ]
         await self._application.bot.set_my_commands(commands)
 
-    def _main_keyboard(self) -> InlineKeyboardMarkup:
+    async def _main_keyboard_for(self, user_id: str) -> InlineKeyboardMarkup:
+        daily_enabled = await self._store.get_daily_reports_enabled("telegram", user_id)
+        daily_label = "🔔 Daily Reports: ON" if daily_enabled else "🔕 Daily Reports: OFF"
         keyboard = [
-            [InlineKeyboardButton("Generate report", callback_data=CALLBACK_REPORT)],
-            [InlineKeyboardButton("Manage addresses", callback_data=CALLBACK_ADDRESSES)],
+            [InlineKeyboardButton("📊 Generate Report (yPort)", callback_data=CALLBACK_REPORT)],
+            [InlineKeyboardButton("🧾 Manage Addresses", callback_data=CALLBACK_ADDRESSES)],
             [
-                InlineKeyboardButton("Daily on", callback_data=CALLBACK_DAILY_ON),
-                InlineKeyboardButton("Daily off", callback_data=CALLBACK_DAILY_OFF),
+                InlineKeyboardButton(daily_label, callback_data=CALLBACK_DAILY_TOGGLE),
             ],
-            [InlineKeyboardButton("Help", callback_data=CALLBACK_HELP)],
+            [InlineKeyboardButton("❓ Help", callback_data=CALLBACK_HELP)],
         ]
         return InlineKeyboardMarkup(keyboard)
+
+    def _format_address_line(self, address: str, ens_name: str | None) -> str:
+        if ens_name:
+            return f"- {address} ({ens_name})"
+        return f"- {address}"
+
+    async def _addresses_prompt(self, user_id: str) -> str:
+        addresses = await self._store.get_addresses("telegram", user_id)
+        if addresses:
+            lines = ["🧾 Current addresses:"]
+            lines.extend([self._format_address_line(row["address"], row.get("ens_name")) for row in addresses])
+            lines.append("Send new addresses to replace them.")
+            return "\n".join(lines)
+        return "⚠️ No addresses saved yet. Send addresses or ENS names."
 
     async def _start(self, update: Update, context: CallbackContext) -> None:
         user_id = str(update.effective_chat.id)
         logger.info("Telegram /start from %s", user_id)
-        message = (
-            "Welcome. Send your wallet addresses or ENS names separated by spaces. "
-            "Use the buttons below after saving addresses."
-        )
-        await self._reply(update, context, message, reply_markup=self._main_keyboard())
+        message = "👋 Welcome!\n\n" + await self._addresses_prompt(user_id)
+        await self._reply(update, context, message, reply_markup=await self._main_keyboard_for(user_id))
 
     async def _help_command(self, update: Update, context: CallbackContext) -> None:
+        user_id = str(update.effective_chat.id)
         message = (
-            "Commands:\n"
-            "/start - start and add addresses\n"
-            "/yport - generate report\n"
-            "/addresses - show or replace addresses\n"
-            "/daily_on - enable daily reports\n"
-            "/daily_off - disable daily reports\n"
+            "📌 Commands:\n"
+            "/start - add addresses\n"
+            "/yport - generate a report\n"
+            "/addresses - view or replace addresses\n"
+            "/dailytoggle - toggle daily reports\n"
         )
-        await self._reply(update, context, message, reply_markup=self._main_keyboard())
+        await self._reply(update, context, message, reply_markup=await self._main_keyboard_for(user_id))
 
     async def _addresses_command(self, update: Update, context: CallbackContext) -> None:
         user_id = str(update.effective_chat.id)
-        addresses = await self._store.get_addresses("telegram", user_id)
-        if addresses:
-            lines = ["Current addresses:"] + [f"- {row['address']}" for row in addresses]
-            lines.append("Send new addresses to replace them.")
-            await self._reply(update, context, "\n".join(lines), reply_markup=self._main_keyboard())
+        message = await self._addresses_prompt(user_id)
+        await self._reply(update, context, message, reply_markup=await self._main_keyboard_for(user_id))
+
+    async def _daily_toggle_command(self, update: Update, context: CallbackContext) -> None:
+        user_id = str(update.effective_chat.id)
+        enabled = await self._store.get_daily_reports_enabled("telegram", user_id)
+        new_state = not enabled
+        await self._store.set_daily_reports("telegram", user_id, new_state)
+        if new_state:
+            time_str = self._config.daily_report_time_utc.strftime("%H:%M")
+            message = f"🔔 Daily reports enabled. Expect them around {time_str} UTC."
         else:
-            await self._reply(update, context, "No addresses saved. Send addresses or ENS names.", reply_markup=self._main_keyboard())
-
-    async def _daily_on_command(self, update: Update, context: CallbackContext) -> None:
-        user_id = str(update.effective_chat.id)
-        time_str = self._config.daily_report_time_utc.strftime("%H:%M")
-        await self._store.set_daily_reports("telegram", user_id, True)
-        await self._reply(
-            update,
-            context,
-            f"Daily reports enabled. Reports will arrive around {time_str} UTC.",
-            reply_markup=self._main_keyboard(),
-        )
-
-    async def _daily_off_command(self, update: Update, context: CallbackContext) -> None:
-        user_id = str(update.effective_chat.id)
-        await self._store.set_daily_reports("telegram", user_id, False)
-        await self._reply(update, context, "Daily reports disabled.", reply_markup=self._main_keyboard())
+            message = "🔕 Daily reports disabled."
+        await self._reply(update, context, message, reply_markup=await self._main_keyboard_for(user_id))
 
     async def _yport_command(self, update: Update, context: CallbackContext) -> None:
         await self._send_report(update, context)
@@ -140,14 +146,16 @@ class TelegramBot:
             await self._send_report(update, context)
         elif action == CALLBACK_ADDRESSES:
             await self._addresses_command(update, context)
-        elif action == CALLBACK_DAILY_ON:
-            await self._daily_on_command(update, context)
-        elif action == CALLBACK_DAILY_OFF:
-            await self._daily_off_command(update, context)
+        elif action == CALLBACK_DAILY_TOGGLE:
+            await self._daily_toggle_command(update, context)
         elif action == CALLBACK_HELP:
             await self._help_command(update, context)
         else:
-            await context.bot.send_message(chat_id=user_id, text="Unknown action.")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="Unknown action.",
+                reply_markup=await self._main_keyboard_for(user_id),
+            )
 
     async def _handle_message(self, update: Update, context: CallbackContext) -> None:
         user_id = str(update.effective_chat.id)
@@ -158,20 +166,20 @@ class TelegramBot:
         if addresses:
             unique_addresses = sorted(set(addresses))
             await self._store.set_addresses("telegram", user_id, unique_addresses, ens_map)
-            lines = [f"Saved {len(unique_addresses)} address(es):"]
-            lines.extend([f"- {addr}" for addr in unique_addresses])
+            lines = [f"✅ Saved {len(unique_addresses)} address(es):"]
+            lines.extend([self._format_address_line(addr, ens_map.get(addr)) for addr in unique_addresses])
             if errors:
-                lines.append("Some inputs could not be processed:")
+                lines.append("⚠️ Some inputs could not be processed:")
                 lines.extend([f"- {err}" for err in errors])
-            await self._reply(update, context, "\n".join(lines), reply_markup=self._main_keyboard())
+            await self._reply(update, context, "\n".join(lines), reply_markup=await self._main_keyboard_for(user_id))
             return
 
         if had_candidates and errors:
             await self._reply(
                 update,
                 context,
-                "No valid addresses found. Errors:\n" + "\n".join(f"- {err}" for err in errors),
-                reply_markup=self._main_keyboard(),
+                "⚠️ No valid addresses found. Errors:\n" + "\n".join(f"- {err}" for err in errors),
+                reply_markup=await self._main_keyboard_for(user_id),
             )
             return
 
@@ -182,14 +190,14 @@ class TelegramBot:
                     update,
                     context,
                     "Send new addresses to replace the current list.",
-                    reply_markup=self._main_keyboard(),
+                    reply_markup=await self._main_keyboard_for(user_id),
                 )
             else:
                 await self._reply(
                     update,
                     context,
-                    "Send your wallet addresses or ENS names separated by spaces.",
-                    reply_markup=self._main_keyboard(),
+                    "➡️ Send wallet addresses or ENS names separated by spaces.\nExample: 0xabc... 0xdef... vitalik.eth",
+                    reply_markup=await self._main_keyboard_for(user_id),
                 )
 
     async def _reply(self, update: Update, context: CallbackContext, text: str, reply_markup=None) -> None:
@@ -225,29 +233,54 @@ class TelegramBot:
 
         lock = self._locks.setdefault(user_id, asyncio.Lock())
         if lock.locked():
-            await context.bot.send_message(chat_id=user_id, text="A report is already being generated.")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="⏳ A report is already being generated. Please wait.",
+                reply_markup=await self._main_keyboard_for(user_id),
+            )
             return
 
         addresses_rows = await self._store.get_addresses("telegram", user_id)
         addresses = [row["address"] for row in addresses_rows]
         if not addresses:
-            await context.bot.send_message(chat_id=user_id, text="No addresses saved. Send addresses first.")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="⚠️ Please send your address(es) or ENS name(s) first.",
+                reply_markup=await self._main_keyboard_for(user_id),
+            )
             return
 
         async with lock:
-            await context.bot.send_message(chat_id=user_id, text="Generating report. This may take a minute.")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="🔄 Generating your Yearn portfolio report...\n\nThis might take a minute...",
+            )
             try:
                 report = await self._report_service.generate(addresses)
             except Exception as exc:
                 logger.error("Report generation failed: %s", exc)
-                await context.bot.send_message(chat_id=user_id, text="Report generation failed. Try again later.")
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text="❌ An error occurred while generating your report. Please try again later.",
+                )
                 return
 
             await self._store.increment_usage(on_demand=1)
 
-            report_lines = render_report(report, self._config)
+            if report.empty:
+                sections = [render_report(report, self._config)]
+            else:
+                sections = render_chain_sections(report, self._config)
+                header_lines = ["✏️ **Your Yearn Portfolio Report**"]
+                if report.has_yearn_gauge_deposit:
+                    header_lines.append(f"⚠️ *{escape_markdown(self._config.veyfi_deprecation_message)}*")
+                if sections:
+                    sections[0] = header_lines + sections[0]
+                else:
+                    sections.append(header_lines)
+                sections.append(render_overall_section(report))
+
             suggestions_lines = render_suggestions(report.suggestions)
-            sections = [report_lines]
             if suggestions_lines:
                 sections.append(suggestions_lines)
 
@@ -256,7 +289,7 @@ class TelegramBot:
                 for chunk_index, (chunk_text, chunk_entities) in enumerate(chunks):
                     is_last_section = idx == len(sections) - 1
                     is_last_chunk = chunk_index == len(chunks) - 1
-                    markup = self._main_keyboard() if (is_last_section and is_last_chunk) else None
+                    markup = await self._main_keyboard_for(user_id) if (is_last_section and is_last_chunk) else None
                     await context.bot.send_message(
                         chat_id=user_id,
                         text=chunk_text,
@@ -280,8 +313,20 @@ class TelegramBot:
                 continue
 
             report_lines = render_report(report, self._config)
+            if report.empty:
+                sections = [report_lines]
+            else:
+                sections = render_chain_sections(report, self._config)
+                header_lines = ["✏️ **Your Yearn Portfolio Report**"]
+                if report.has_yearn_gauge_deposit:
+                    header_lines.append(f"⚠️ *{escape_markdown(self._config.veyfi_deprecation_message)}*")
+                if sections:
+                    sections[0] = header_lines + sections[0]
+                else:
+                    sections.append(header_lines)
+                sections.append(render_overall_section(report))
+
             suggestions_lines = render_suggestions(report.suggestions)
-            sections = [report_lines]
             if suggestions_lines:
                 sections.append(suggestions_lines)
 
@@ -290,7 +335,7 @@ class TelegramBot:
                 for chunk_index, (chunk_text, chunk_entities) in enumerate(chunks):
                     is_last_section = idx == len(sections) - 1
                     is_last_chunk = chunk_index == len(chunks) - 1
-                    markup = self._main_keyboard() if (is_last_section and is_last_chunk) else None
+                    markup = await self._main_keyboard_for(user_id) if (is_last_section and is_last_chunk) else None
                     await self._application.bot.send_message(
                         chat_id=user_id,
                         text=chunk_text,

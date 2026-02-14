@@ -85,9 +85,12 @@ async def fetch_balances_for_eoa_on_chain(
         if addr_lower in balances and balances[addr_lower] != "0x0":
             return None
         try:
-            contract = w3_instance.eth.contract(address=checksum, abi=ERC20_ABI_SIMPLIFIED)
             async with semaphore:
-                value = await loop.run_in_executor(None, contract.functions.balanceOf(eoa).call)
+                def _call_balance() -> int:
+                    contract = w3_instance.eth.contract(address=checksum, abi=ERC20_ABI_SIMPLIFIED)
+                    return contract.functions.balanceOf(eoa).call()
+
+                value = await loop.run_in_executor(None, _call_balance)
             if value > 0:
                 return (addr_lower, hex(value))
         except Exception as exc:

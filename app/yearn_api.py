@@ -33,6 +33,8 @@ class YearnApi:
         return self._cache[key]["data"] is not None and (now - self._cache[key]["timestamp"] < self._cache_expiry_seconds)
 
     async def update_ydaemon_cache(self) -> bool:
+        if self._is_fresh("ydaemon"):
+            return False
         logger.info("Updating yDaemon cache")
         try:
             session = self._http.session
@@ -71,6 +73,8 @@ class YearnApi:
         logger.info("Kong cache updated for %s vaults", len(new_kong_data))
 
     async def update_1up_cache(self) -> bool:
+        if self._is_fresh("1up"):
+            return False
         logger.info("Updating 1UP cache")
         try:
             session = self._http.session
@@ -142,13 +146,17 @@ class YearnApi:
         oneup_ok = await self.update_1up_cache()
         if oneup_ok:
             await self.update_1up_gauge_map_cache()
-        if ydaemon_ok and self._cache["ydaemon"]["data"]:
+        if self._cache["ydaemon"]["data"] and not self._is_fresh("kong"):
             vaults_for_kong = {
                 (vault.get("chainID"), vault.get("address"))
                 for vault in self._cache["ydaemon"]["data"]
                 if vault.get("chainID") and vault.get("address")
             }
             await self.update_kong_cache(list(vaults_for_kong))
+
+    async def ensure_ydaemon_cache(self) -> None:
+        if not self._is_fresh("ydaemon"):
+            await self.update_ydaemon_cache()
 
     def get_ydaemon_data(self) -> Optional[list]:
         if self._is_fresh("ydaemon"):

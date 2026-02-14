@@ -27,10 +27,10 @@ def _format_signed_money(value: Decimal) -> str:
 
 
 def render_report(report: ReportData, config: Config) -> List[str]:
-    lines: List[str] = ["**Your Yearn Portfolio Report**"]
+    lines: List[str] = ["✏️ **Your Yearn Portfolio Report**"]
 
     if report.has_yearn_gauge_deposit:
-        lines.append(f"*Notice: {escape_markdown(config.veyfi_deprecation_message)}*")
+        lines.append(f"⚠️ *{escape_markdown(config.veyfi_deprecation_message)}*")
 
     if report.empty:
         lines.append("*No Yearn vault holdings found for the provided addresses.*")
@@ -57,28 +57,28 @@ def render_report(report: ReportData, config: Config) -> List[str]:
 
             lines.append(
                 f"**[{name} ({token})]({entry.vault_url})**{staked_indicator}\n"
-                f"  Value: {_format_money(entry.vault_usd_value)}\n"
-                f"  Vault APY: {entry.vault_apr_percent:.2f}%"
+                f"Value: {_format_money(entry.vault_usd_value)}\n"
+                f"Vault APY: {entry.vault_apr_percent:.2f}%"
                 f"{staking_line}"
-                f"\n  Yield: {entry.yield_7d:.2f}% [7d] ({_format_signed_money(entry.usd_change_7d)}), {entry.yield_30d:.2f}% [30d] ({_format_signed_money(entry.usd_change_30d)})"
+                f"\nYield: {entry.yield_7d:.2f}% [7d] ({_format_signed_money(entry.usd_change_7d)}), {entry.yield_30d:.2f}% [30d] ({_format_signed_money(entry.usd_change_30d)})"
             )
 
         if chain.total_usd > 0:
             lines.append(
-                "  ---\n"
-                f"  **Chain Total: {_format_money(chain.total_usd)}**\n"
-                f"  Avg Vault APY: {chain.avg_apr:.2f}%\n"
-                f"  Avg Yield: {chain.avg_yield_7d:.2f}% [7d] ({_format_signed_money(chain.total_usd_change_7d)}), {chain.avg_yield_30d:.2f}% [30d] ({_format_signed_money(chain.total_usd_change_30d)})"
+                "---\n"
+                f"💰 **Chain Total: {_format_money(chain.total_usd)}**\n"
+                f"📊 Avg Vault APY: {chain.avg_apr:.2f}%\n"
+                f"📈 Avg Yield: {chain.avg_yield_7d:.2f}% [7d] ({_format_signed_money(chain.total_usd_change_7d)}), {chain.avg_yield_30d:.2f}% [30d] ({_format_signed_money(chain.total_usd_change_30d)})"
             )
         else:
-            lines.append("  *No holdings found on this chain.*")
+            lines.append("*No holdings found on this chain.*")
 
     lines.append("--- **Overall Portfolio** ---")
     if report.overall.total_usd > 0:
-        lines.append(f"Total Value: {_format_money(report.overall.total_usd)}")
-        lines.append(f"Avg Vault APY: {report.overall.avg_apr:.2f}%")
+        lines.append(f"💰 Total Value: {_format_money(report.overall.total_usd)}")
+        lines.append(f"📊 Avg Vault APY: {report.overall.avg_apr:.2f}%")
         lines.append(
-            f"Avg Yield: {report.overall.avg_yield_7d:.2f}% [7d] ({_format_signed_money(report.overall.total_usd_change_7d)}), {report.overall.avg_yield_30d:.2f}% [30d] ({_format_signed_money(report.overall.total_usd_change_30d)})"
+            f"📈 Avg Yield: {report.overall.avg_yield_7d:.2f}% [7d] ({_format_signed_money(report.overall.total_usd_change_7d)}), {report.overall.avg_yield_30d:.2f}% [30d] ({_format_signed_money(report.overall.total_usd_change_30d)})"
         )
     else:
         lines.append("*No Yearn vault holdings found for the provided addresses.*")
@@ -91,7 +91,7 @@ def render_suggestions(suggestions: List[SuggestionEntry]) -> List[str]:
     if not suggestions:
         return []
 
-    lines: List[str] = ["**Vault Suggestions**"]
+    lines: List[str] = ["💡 **Vault Suggestions**"]
     current_chain = None
 
     for suggestion in suggestions:

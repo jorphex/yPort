@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sqlite3
 from datetime import datetime
 from typing import Iterable, Optional, Dict, List
@@ -44,6 +45,11 @@ SCHEMA = [
 class SQLiteStore:
     def __init__(self, path: str) -> None:
         self._path = path
+        if os.path.isdir(self._path):
+            raise ValueError(f"DB path points to a directory: {self._path}")
+        parent = os.path.dirname(self._path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         self._conn = sqlite3.connect(self._path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = asyncio.Lock()
@@ -126,6 +132,21 @@ class SQLiteStore:
             (platform,),
         )
         return cursor.fetchall()
+
+    async def get_daily_reports_enabled(self, platform: str, user_id: str) -> bool:
+        async with self._lock:
+            return await asyncio.to_thread(self._get_daily_reports_enabled_sync, platform, user_id)
+
+    def _get_daily_reports_enabled_sync(self, platform: str, user_id: str) -> bool:
+        cursor = self._conn.cursor()
+        cursor.execute(
+            "SELECT daily_reports_enabled FROM user_settings WHERE platform = ? AND user_id = ?",
+            (platform, user_id),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return False
+        return bool(row["daily_reports_enabled"])
 
     async def increment_usage(self, on_demand: int = 0, daily: int = 0) -> None:
         date_str = datetime.utcnow().date().isoformat()

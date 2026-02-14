@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 DISCORD_MAX_LEN = 2000
 
+def _format_address_line(address: str, ens_name: Optional[str]) -> str:
+    if ens_name:
+        return f"- {address} ({ens_name})"
+    return f"- {address}"
+
 SINGLE_ASSET_TOKENS = {
     "ethereum": {
         "weth": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -81,10 +86,10 @@ class AddressModal(discord.ui.Modal):
         if addresses:
             unique_addresses = sorted(set(addresses))
             await self._store.set_addresses("discord", self._user_id, unique_addresses, ens_map)
-            lines = [f"Saved {len(unique_addresses)} address(es):"]
-            lines.extend([f"- {addr}" for addr in unique_addresses])
+            lines = [f"✅ Saved {len(unique_addresses)} address(es):"]
+            lines.extend([_format_address_line(addr, ens_map.get(addr)) for addr in unique_addresses])
             if errors:
-                lines.append("Some inputs could not be processed:")
+                lines.append("⚠️ Some inputs could not be processed:")
                 lines.extend([f"- {err}" for err in errors])
             await interaction.followup.send("\n".join(lines), ephemeral=True)
             return
@@ -96,15 +101,41 @@ class AddressModal(discord.ui.Modal):
         await interaction.followup.send("No valid addresses found in your input.", ephemeral=True)
 
 class ManageAddressesView(discord.ui.View):
-    def __init__(self, store: SQLiteStore, web3_manager: Web3Manager, user_id: str) -> None:
-        super().__init__(timeout=300)
+    def __init__(self, store: SQLiteStore, web3_manager: Web3Manager, user_id: Optional[str] = None, timeout: int = 300) -> None:
+        super().__init__(timeout=timeout)
         self._store = store
         self._web3 = web3_manager
         self._user_id = user_id
 
-    @discord.ui.button(label="Manage addresses", style=discord.ButtonStyle.primary)
+    @discord.ui.button(label="🧾 Manage addresses", style=discord.ButtonStyle.primary)
     async def manage_addresses(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        await interaction.response.send_modal(AddressModal(self._store, self._web3, self._user_id))
+        user_id = self._user_id or str(interaction.user.id)
+        await interaction.response.send_modal(AddressModal(self._store, self._web3, user_id))
+
+class TopVaultsReportView(discord.ui.View):
+    def __init__(self, bot_ref: "DiscordBot", timeout: int = 3 * 60 * 60) -> None:
+        super().__init__(timeout=timeout)
+        self._bot_ref = bot_ref
+
+    @discord.ui.button(label="📊 Generate Report", style=discord.ButtonStyle.success)
+    async def generate_report(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await self._bot_ref._handle_yport(interaction)
+
+    @discord.ui.button(label="🧾 Manage Addresses", style=discord.ButtonStyle.primary)
+    async def manage_addresses(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        view = ManageAddressesView(self._bot_ref._store, self._bot_ref._web3)
+        await interaction.response.send_message(
+            "Use the button below to add or replace addresses.",
+            ephemeral=True,
+            view=view,
+        )
+
+    @discord.ui.button(label="❓ Help", style=discord.ButtonStyle.secondary)
+    async def help(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await interaction.response.send_message(
+            "📌 Commands:\n- /yport: your Yearn report\n- /addresses: manage wallets\n- /help: this help",
+            ephemeral=True,
+        )
 
 class DiscordBot:
     def __init__(
@@ -150,7 +181,8 @@ class DiscordBot:
         @self.bot.tree.command(name="help", description="Show help")
         async def help_command(interaction: discord.Interaction) -> None:
             await interaction.response.send_message(
-                "Commands: /yport, /addresses, /help", ephemeral=True
+                "📌 Commands:\n- /yport: your Yearn report\n- /addresses: manage wallets\n- /help: this help",
+                ephemeral=True,
             )
 
     async def on_ready(self) -> None:
@@ -187,10 +219,10 @@ class DiscordBot:
         if addresses:
             unique_addresses = sorted(set(addresses))
             await self._store.set_addresses("discord", user_id, unique_addresses, ens_map)
-            lines = [f"Saved {len(unique_addresses)} address(es):"]
-            lines.extend([f"- {addr}" for addr in unique_addresses])
+            lines = [f"✅ Saved {len(unique_addresses)} address(es):"]
+            lines.extend([_format_address_line(addr, ens_map.get(addr)) for addr in unique_addresses])
             if errors:
-                lines.append("Some inputs could not be processed:")
+                lines.append("⚠️ Some inputs could not be processed:")
                 lines.extend([f"- {err}" for err in errors])
             lines.append("You can now use /yport in the server.")
             await message.channel.send("\n".join(lines))
@@ -200,7 +232,7 @@ class DiscordBot:
             await message.channel.send("No valid addresses found.\n" + "\n".join(errors))
             return
 
-        await message.channel.send("Send wallet addresses or ENS names separated by spaces.")
+        await message.channel.send("➡️ Send wallet addresses or ENS names separated by spaces. Example: 0xabc... vitalik.eth")
 
     async def _moderate_public_channel(self, message: discord.Message) -> None:
         if message.channel.id != self._config.discord_public_channel_id:
@@ -220,7 +252,7 @@ class DiscordBot:
         last_time = self._last_report_times.get(user_id)
         if last_time and now - last_time < timedelta(seconds=self._config.rate_limit_seconds):
             await interaction.response.send_message(
-                f"Please wait {self._config.rate_limit_seconds} seconds before requesting another report.",
+                f"⏳ Please wait {self._config.rate_limit_seconds} seconds before requesting another report.",
                 ephemeral=True,
             )
             return
@@ -228,24 +260,35 @@ class DiscordBot:
 
         lock = self._locks.setdefault(user_id, asyncio.Lock())
         if lock.locked():
-            await interaction.response.send_message("A report is already being generated.", ephemeral=True)
+            await interaction.response.send_message(
+                "⏳ Your previous report request is still processing. Please wait.", ephemeral=True
+            )
             return
 
         addresses_rows = await self._store.get_addresses("discord", user_id)
         addresses = [row["address"] for row in addresses_rows]
         if not addresses:
+            view = ManageAddressesView(self._store, self._web3, user_id)
             await interaction.response.send_message(
-                "No addresses saved. Use /addresses to add them.", ephemeral=True
+                "⚠️ No addresses found. Use the button below to add them.", ephemeral=True, view=view
             )
             return
 
         async with lock:
             await interaction.response.defer(ephemeral=True, thinking=True)
+            await interaction.followup.send(
+                "🔄 Generating your Yearn portfolio report...\n\nThis might take a minute or two, especially if checking multiple chains...",
+                ephemeral=True,
+                suppress_embeds=True,
+            )
             try:
                 report = await self._report_service.generate(addresses)
             except Exception as exc:
                 logger.error("Discord report generation failed: %s", exc)
-                await interaction.followup.send("Report generation failed. Try again later.", ephemeral=True)
+                await interaction.followup.send(
+                    "❌ An error occurred while generating your report. Please try again later.",
+                    ephemeral=True,
+                )
                 return
 
             await self._store.increment_usage(on_demand=1)
@@ -263,25 +306,24 @@ class DiscordBot:
                 for chunk_index, chunk in enumerate(chunks):
                     is_last_section = idx == len(sections) - 1
                     is_last_chunk = chunk_index == len(chunks) - 1
-                    await interaction.followup.send(
-                        chunk,
-                        ephemeral=True,
-                        view=view if (is_last_section and is_last_chunk) else None,
-                        suppress_embeds=True,
-                    )
+                    payload = {"ephemeral": True, "suppress_embeds": True}
+                    if is_last_section and is_last_chunk:
+                        payload["view"] = view
+                    await interaction.followup.send(chunk, **payload)
 
     async def _handle_addresses(self, interaction: discord.Interaction) -> None:
         user_id = str(interaction.user.id)
         addresses_rows = await self._store.get_addresses("discord", user_id)
         if addresses_rows:
-            lines = ["Current addresses:"] + [f"- {row['address']}" for row in addresses_rows]
-            lines.append("Use the button to replace them.")
+            lines = ["🧾 Current addresses:"]
+            lines.extend([_format_address_line(row["address"], row.get("ens_name")) for row in addresses_rows])
+            lines.append("Use the button below to replace them.")
             view = ManageAddressesView(self._store, self._web3, user_id)
             await interaction.response.send_message("\n".join(lines), ephemeral=True, view=view)
             return
 
         view = ManageAddressesView(self._store, self._web3, user_id)
-        await interaction.response.send_message("No addresses saved.", ephemeral=True, view=view)
+        await interaction.response.send_message("⚠️ No addresses saved yet.", ephemeral=True, view=view)
 
     async def start(self) -> None:
         await self.bot.start(self._config.discord_bot_token)
@@ -299,7 +341,7 @@ class DiscordBot:
 
     async def _send_top_vaults_report(self) -> None:
         try:
-            await self._yearn.update_ydaemon_cache()
+            await self._yearn.ensure_ydaemon_cache()
             vaults_data = self._yearn.get_ydaemon_data()
             if not vaults_data:
                 return
@@ -386,7 +428,8 @@ class DiscordBot:
                 except Exception:
                     pass
 
-            new_message = await channel.send(embed=embed)
+            report_view = TopVaultsReportView(self)
+            new_message = await channel.send(embed=embed, view=report_view)
             self._last_scheduled_report_id = new_message.id
         except Exception as exc:
             logger.error("Top vaults report failed: %s", exc)

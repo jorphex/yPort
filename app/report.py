@@ -416,10 +416,10 @@ class ReportService:
             last_update_dt = datetime.fromtimestamp(last_update_ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M %Z")
             cache_note = (
                 f"Data cached every {self._yearn.cache_expiry_hours():.0f} hours. "
-                f"Last update: {last_update_dt}. Staking APRs shown may be max rates."
+                f"Last update: {last_update_dt}."
             )
         else:
-            cache_note = "Data freshness may vary. Staking APRs shown may be max rates."
+            cache_note = "Data freshness may vary."
 
         empty = overall.total_usd <= 0
 
