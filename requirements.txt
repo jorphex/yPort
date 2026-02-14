@@ -1,4 +1,5 @@
 aiohttp==3.9.5
 discord.py==2.2.2
 python-telegram-bot==20.4
+telegramify-markdown==1.0.0rc4
 web3==6.5.0

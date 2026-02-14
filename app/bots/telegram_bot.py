@@ -2,12 +2,12 @@ import asyncio
 import logging
 from typing import List
 
-from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, Update
 from telegram.ext import Application, ApplicationBuilder, CallbackContext, CallbackQueryHandler, CommandHandler, MessageHandler, filters
+from telegramify_markdown import convert, split_entities
 
 from ..addressing import parse_addresses_input
 from ..config import Config
-from ..messages import split_lines
 from ..report import ReportService
 from ..web3_utils import Web3Manager
 from ..storage import SQLiteStore
@@ -200,6 +200,23 @@ class TelegramBot:
         if chat_id is not None:
             await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
+    def _markdown_chunks(self, lines: List[str]) -> List[tuple[str, List[MessageEntity]]]:
+        text = "\n".join(lines)
+        converted_text, entities = convert(text)
+        chunks = split_entities(converted_text, entities, TELEGRAM_MAX_LEN)
+        normalized: List[tuple[str, List[MessageEntity]]] = []
+        for chunk_text, chunk_entities in chunks:
+            normalized_entities: List[MessageEntity] = []
+            for entity in chunk_entities:
+                if isinstance(entity, MessageEntity):
+                    normalized_entities.append(entity)
+                elif hasattr(entity, "to_dict"):
+                    normalized_entities.append(MessageEntity(**entity.to_dict()))
+                else:
+                    normalized_entities.append(MessageEntity(**entity))
+            normalized.append((chunk_text, normalized_entities))
+        return normalized
+
     async def _send_report(self, update: Update, context: CallbackContext) -> None:
         if update.callback_query and update.callback_query.message:
             user_id = str(update.callback_query.message.chat_id)
@@ -235,15 +252,15 @@ class TelegramBot:
                 sections.append(suggestions_lines)
 
             for idx, section in enumerate(sections):
-                chunks = split_lines(section, TELEGRAM_MAX_LEN, allow_mid_line_split=False)
-                for chunk_index, chunk in enumerate(chunks):
+                chunks = self._markdown_chunks(section)
+                for chunk_index, (chunk_text, chunk_entities) in enumerate(chunks):
                     is_last_section = idx == len(sections) - 1
                     is_last_chunk = chunk_index == len(chunks) - 1
                     markup = self._main_keyboard() if (is_last_section and is_last_chunk) else None
                     await context.bot.send_message(
                         chat_id=user_id,
-                        text=chunk,
-                        parse_mode="HTML",
+                        text=chunk_text,
+                        entities=chunk_entities,
                         disable_web_page_preview=True,
                         reply_markup=markup,
                     )
@@ -269,15 +286,15 @@ class TelegramBot:
                 sections.append(suggestions_lines)
 
             for idx, section in enumerate(sections):
-                chunks = split_lines(section, TELEGRAM_MAX_LEN, allow_mid_line_split=False)
-                for chunk_index, chunk in enumerate(chunks):
+                chunks = self._markdown_chunks(section)
+                for chunk_index, (chunk_text, chunk_entities) in enumerate(chunks):
                     is_last_section = idx == len(sections) - 1
                     is_last_chunk = chunk_index == len(chunks) - 1
                     markup = self._main_keyboard() if (is_last_section and is_last_chunk) else None
                     await self._application.bot.send_message(
                         chat_id=user_id,
-                        text=chunk,
-                        parse_mode="HTML",
+                        text=chunk_text,
+                        entities=chunk_entities,
                         disable_web_page_preview=True,
                         reply_markup=markup,
                     )
