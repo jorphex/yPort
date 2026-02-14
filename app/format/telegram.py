@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import List
 
-from ..report import ReportData, SuggestionEntry, format_tvl, ChainReport, VaultPosition
+from ..report import ReportData, SuggestionEntry, format_tvl, ChainReport, VaultEntry
 from ..config import Config
 
 
@@ -95,7 +95,7 @@ def render_report(report: ReportData, config: Config) -> List[str]:
     return lines
 
 
-def _format_vault_lines(entry: VaultPosition) -> List[str]:
+def _format_vault_lines(entry: VaultEntry) -> List[str]:
     name = escape_markdown(entry.display_name)
     token = escape_markdown(entry.token_symbol)
     staked_indicator = ""
