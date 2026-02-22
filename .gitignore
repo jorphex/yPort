@@ -28,7 +28,7 @@ dist/
 .DS_Store
 
 # Local notes
-MYNOTES.md
+NOTES.md
 AGENTS.md
 
 README.reference.md

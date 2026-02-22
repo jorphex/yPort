@@ -142,7 +142,7 @@ class YearnApi:
         return False
 
     async def update_all_caches(self) -> None:
-        ydaemon_ok = await self.update_ydaemon_cache()
+        await self.update_ydaemon_cache()
         oneup_ok = await self.update_1up_cache()
         if oneup_ok:
             await self.update_1up_gauge_map_cache()
